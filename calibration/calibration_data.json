@@ -1,0 +1,14 @@
+{
+  "generated": "2026-01-29 15:23:09",
+  "num_calibration_points": 6,
+  "z_axis_sensor": {
+    "slope": 16.919685542455237,
+    "intercept": -259.53500156355966,
+    "r_squared": 0.639757026499254,
+    "formula": "Force (N) = slope * Z-axis (mT) + intercept",
+    "sensor_label": "M1"
+  },
+  "sensor_config": {
+    "z_axis_keyword": "Z-axis"
+  }
+}
