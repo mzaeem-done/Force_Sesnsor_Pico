@@ -22,13 +22,13 @@ Magnetic force sensing system using MLX90393 3-axis magnetometer with calibratio
 
 ## ⚙️ Features
 
-- ✅ MLX90393 3-axis magnetometer (Z-axis used for force)
-- ✅ Built-in calibration constants
-- ✅ Real-time force calculation (Newtons & kilograms)
+- ✅ MLX90393 3-axis magnetometer (Z-axis magnetic field measurement)
+- ✅ **Raw Z-axis output only** (no force calculation on Pico)
 - ✅ Smoothing filter for stable readings
 - ✅ LED activity indicator (GPIO25)
 - ✅ Serial output at 10Hz (115200 baud)
-- ✅ Python calibration scripts included
+- ✅ Python calibration scripts for desktop/ROS2
+- ✅ Real-time force visualization with `visualizer.py`
 
 ## 🚀 Quick Start
 
@@ -72,98 +72,118 @@ Copy-Item build\force_sensor.uf2 D:\
 
 Pico will automatically reboot and start running the force sensor code!
 
-### Step 2: Initial Test (Without Calibration)
+### Step 2: View Serial Output
 
-View serial output to verify sensor works:
-```bash
+Verify the sensor is working and outputting Z-axis values:
+
+```powershell
+# Find COM port
+Get-WMIObject Win32_SerialPort | Select-Object Name, DeviceID
+
+# Connect to serial (replace COM3 with your port)
 python -m serial.tools.miniterm COM3 115200
 ```
 
-You should see Z-axis readings in millitesla (mT).
+You should see **raw Z-axis readings in millitesla (mT)**:
+```
+Z-axis(M1): 12.989 mT
+Z-axis(M1): 12.997 mT
+Z-axis(M1): 13.005 mT
+```
 
-### Step 3: Calibration (IMPORTANT!)
+### Step 3: Calibration (Desktop/ROS2)
 
-The firmware has default calibration values. For accurate force measurements, **you must calibrate**:
+**Force calculation is done on the desktop**, not on the Pico. Use the Python calibration scripts:
 
-```bash
+```powershell
 cd calibration
 
 # Install dependencies (first time only)
 pip install pyserial numpy matplotlib
-
-# Update COM port in calibration_pico.py
-# Change: SERIAL_PORT = 'COM3'
-
-# Run calibration
-python calibration_pico.py
 ```
 
-**Calibration Process:**
-1. Place 0.1 kg weight → Press Enter
-2. Place 0.5 kg weight → Press Enter
-3. Place 1.0 kg weight → Press Enter
-4. Type `done`
+**Calibrate with known weights:**
 
-This generates `calibration_data.json` with slope and intercept values.
+1. Edit `calibration_pico.py` and set your COM port:
+   ```python
+   SERIAL_PORT = 'COM3'  # Change to your port
+   ```
 
-### Step 4: Update Firmware with Calibration
+2. Run calibration:
+   ```powershell
+   python calibration_pico.py
+   ```
 
-1. Open `force_sensor.c`
-2. Update these lines (around line 28-29):
-```c
-#define CALIBRATION_SLOPE 51.94029384743018f      // Replace with your value
-#define CALIBRATION_INTERCEPT -692.9925307532482f  // Replace with your value
-```
-3. Rebuild and upload firmware:
+3. Follow the prompts:
+   - Place 0.1 kg weight → Press Enter
+   - Place 0.5 kg weight → Press Enter
+   - Place 1.0 kg weight → Press Enter
+   - Type `done` to finish
 
-**Using Docker (recommended):**
+4. This generates `calibration_data.json` with **slope and intercept** values:
+   ```json
+   {
+     "slope": 51.94029384743018,
+     "intercept": -692.9925307532482
+   }
+   ```
+
+### Step 4: Real-Time Force Visualization
+
+The `visualizer.py` script reads raw Z-axis values from the Pico and converts them to force in real-time:
+
 ```powershell
-.\docker-build.ps1
-# Then upload the new .uf2 file to Pico
-```
-
-**Using native build:**
-```powershell
-cd build
-cmake --build .
-# Then upload the new .uf2 file to Pico
-```
-
-### Step 5: Visualize (Optional)
-
-Real-time force visualization:
-```bash
 cd calibration
+
+# Edit visualiser.py and set your COM port
+# SERIAL_PORT = 'COM3'
+
 python visualiser.py
 ```
 
+**What it does:**
+- Reads Z-axis (mT) from Pico serial output
+- Applies calibration: `Force (N) = slope × Z-axis (mT) + intercept`
+- Displays real-time force graph
+- Shows force in Newtons (N) and kilograms (kg)
+
 ## 📊 Output Format
 
-**After calibration:**
+**Pico Serial Output (Raw Z-axis only):**
 ```
 ===========================================
   RASPBERRY PI PICO - FORCE SENSOR
 ===========================================
 Sensor: MLX90393 Magnetometer
 I2C: SDA=GPIO4, SCL=GPIO5
-Calibration: ACTIVE
-  Slope: 51.940294
-  Intercept: -692.992531
+Mode: RAW Z-AXIS OUTPUT
 ===========================================
 
 MLX90393 initialized successfully!
 
 Starting measurements...
-Format: Z-axis(M1): X.XXX mT | Force: X.XXX N (X.XXX kg)
+Format: Z-axis(M1): X.XXX mT
 
-Z-axis(M1): 18.543 mT | Force: 0.032 N (0.003 kg)
-Z-axis(M1): 18.548 mT | Force: 0.037 N (0.004 kg)
-Z-axis(M1): 22.134 mT | Force: 0.912 N (0.093 kg)
+Z-axis(M1): 12.989 mT
+Z-axis(M1): 12.997 mT
+Z-axis(M1): 13.005 mT
+Z-axis(M1): 18.543 mT
+Z-axis(M1): 22.134 mT
+```
+
+**Python Visualizer Output (Force calculated on desktop):**
+```
+Reading from COM3...
+Using calibration: slope=51.940, intercept=-692.993
+
+Z-axis: 12.989 mT → Force: 0.000 N (0.000 kg)
+Z-axis: 18.543 mT → Force: 0.032 N (0.003 kg)
+Z-axis: 22.134 mT → Force: 0.912 N (0.093 kg)
 ```
 
 ## 🔧 Configuration
 
-Edit `force_sensor.c` to customize:
+**Pico Firmware (`force_sensor.c`):**
 
 ```c
 #define LED_PIN 25                // LED pin
@@ -171,11 +191,13 @@ Edit `force_sensor.c` to customize:
 #define I2C_SDA_PIN 4             // I2C SDA pin
 #define I2C_SCL_PIN 5             // I2C SCL pin
 #define I2C_FREQ 400000           // I2C frequency (400kHz)
-#define CALIBRATION_SLOPE ...     // From calibration
-#define CALIBRATION_INTERCEPT ... // From calibration
-#define Z_OFFSET_MT 20.0f         // Z-axis offset
-#define FILTER_VAL 0.4f           // Smoothing filter
+#define Z_OFFSET_MT 20.0f         // Z-axis offset (keeps values positive)
+#define FILTER_VAL 0.4f           // Smoothing filter (0.0-1.0)
 ```
+
+**Python Scripts:**
+- `calibration_pico.py` - Set `SERIAL_PORT` to your COM port
+- `visualiser.py` - Set `SERIAL_PORT` and reads `calibration_data.json`
 
 ## 🛠️ Troubleshooting
 
@@ -184,10 +206,19 @@ Edit `force_sensor.c` to customize:
 | Issue | Solution |
 |-------|----------|
 | "MLX90393 initialization failed" | Check I2C wiring (SDA/SCL), sensor power, I2C address |
-| Incorrect force readings | Run calibration with known weights |
+| No Z-axis output | Verify sensor connection, check serial port (115200 baud) |
 | Noisy readings | Increase `FILTER_VAL` (0.0-1.0, higher = smoother) |
-| Negative force values | Recalibrate or adjust `Z_OFFSET_MT` |
+| Negative Z-axis values | Normal - adjust `Z_OFFSET_MT` if needed |
 | No serial output | Check USB cable, COM port, baud rate (115200) |
+
+### Python Script Issues
+
+| Issue | Solution |
+|-------|----------|
+| Can't connect to COM port | Check port in Device Manager, ensure Pico is connected |
+| "calibration_data.json not found" | Run `calibration_pico.py` first to generate calibration |
+| Force values incorrect | Recalibrate with accurate known weights |
+| Visualizer not showing data | Verify COM port and ensure Pico is sending Z-axis data |
 
 ### Build Issues
 
@@ -208,24 +239,57 @@ Edit `force_sensor.c` to customize:
 
 ## 📝 Calibration Files
 
-The `calibration/` folder contains:
+The `calibration/` folder contains Python scripts for desktop/ROS2:
 
 | File | Description |
 |------|-------------|
-| `calibration_pico.py` | Run calibration with known weights |
-| `visualiser.py` | Real-time force visualization |
-| `calibration_data.json` | Generated calibration constants |
+| `calibration_pico.py` | Calibrate sensor with known weights, generates slope/intercept |
+| `visualiser.py` | Real-time force visualization, converts Z-axis to Force |
+| `calibration_data.json` | Stores calibration constants (slope, intercept) |
 | `README.md` | Detailed calibration instructions |
 
 ## 📐 How It Works
 
-1. **Magnetic sensor** detects magnet displacement when force is applied
-2. **Z-axis reading** (mT) changes proportionally to force
-3. **Linear calibration** converts mT to Newtons:
-   ```
-   Force (N) = slope × Z-axis (mT) + intercept
-   ```
-4. **Smoothing filter** reduces noise for stable readings
+**System Architecture:**
+
+```
+[Force Applied] → [Magnet Moves] → [MLX90393 Sensor]
+       ↓
+   [Pico Firmware]
+       ↓
+  [Z-axis (mT)] → Serial USB → [Desktop/ROS2]
+                                      ↓
+                              [Python Visualizer]
+                                      ↓
+                            [Force (N) Calculated]
+```
+
+**Process:**
+
+1. **Magnetic Field Detection:**
+   - MLX90393 magnetometer measures magnetic field strength
+   - When force is applied, magnet moves closer/farther
+   - Z-axis reading (mT) changes proportionally to displacement
+
+2. **Pico Processing:**
+   - Reads sensor via I2C
+   - Applies smoothing filter (`FILTER_VAL`)
+   - Outputs **raw Z-axis values only** (no force calculation)
+   - Sends data via USB serial at 10Hz
+
+3. **Desktop/ROS2 Processing:**
+   - Python reads Z-axis values from serial
+   - Applies linear calibration formula:
+     ```
+     Force (N) = slope × Z-axis (mT) + intercept
+     ```
+   - Displays force in Newtons (N) and kilograms (kg)
+
+**Why separate processing?**
+- Pico handles fast sensor reading
+- Desktop handles complex calculations and visualization
+- Easier to update calibration without reflashing firmware
+- Better for ROS2 integration
 
 ## 🔗 Related Projects
 
